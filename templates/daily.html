@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Daily View - Screentime Tracker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📅 Daily Breakdown</h2>
+    
+    <div class="filter-section">
+        <label for="date">Select Date:</label>
+        <input type="date" id="date" value="{{ date.strftime('%Y-%m-%d') }}" onchange="updateDate()">
+        <button class="btn" onclick="goToToday()">Today</button>
+    </div>
+    
+    {% if data %}
+    <div class="stat-box" style="margin-bottom: 30px;">
+        <h3>Total for {{ date.strftime('%B %d, %Y') }}</h3>
+        <div class="value">{{ format_duration(total_time) }}</div>
+    </div>
+    
+    <h3>Applications Used</h3>
+    <ul class="app-list">
+        {% for item in data %}
+        <li class="app-item">
+            <div style="flex: 1;">
+                <div class="app-name">{{ item.app_name }}</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ (item.duration / total_time * 100) if total_time > 0 else 0 }}%"></div>
+                </div>
+            </div>
+            <div class="duration">{{ format_duration(item.duration) }}</div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+        <p>📭 No data recorded for {{ date.strftime('%B %d, %Y') }}</p>
+        <p style="font-size: 0.9em;">Select a different date or start tracking</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateDate() {
+    const date = document.getElementById('date').value;
+    window.location.href = `/daily?date=${date}`;
+}
+
+function goToToday() {
+    window.location.href = '/daily';
+}
+</script>
+{% endblock %}

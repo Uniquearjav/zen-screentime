@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics - Screentime Tracker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📊 Statistics</h2>
+    
+    <div class="filter-section">
+        <label for="days">Time Period:</label>
+        <select id="days" onchange="updateStats()">
+            <option value="1" {% if days == 1 %}selected{% endif %}>Today</option>
+            <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 days</option>
+            <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 days</option>
+            <option value="90" {% if days == 90 %}selected{% endif %}>Last 90 days</option>
+        </select>
+        
+        <label for="group_by">Group By:</label>
+        <select id="group_by" onchange="updateStats()">
+            <option value="app" {% if group_by == 'app' %}selected{% endif %}>Application</option>
+            <option value="window" {% if group_by == 'window' %}selected{% endif %}>Window Title</option>
+        </select>
+    </div>
+    
+    {% if data %}
+    <div class="stat-box" style="margin-bottom: 30px;">
+        <h3>Total Screen Time</h3>
+        <div class="value">{{ format_duration(total_time) }}</div>
+    </div>
+    
+    <h3>{% if group_by == 'app' %}Applications{% else %}Windows{% endif %} Breakdown</h3>
+    <ul class="app-list">
+        {% for item in data %}
+        <li class="app-item">
+            <div style="flex: 1;">
+                <div class="app-name">{{ item.app_name }}</div>
+                {% if group_by == 'window' and item.window_title %}
+                <div class="window-title">{{ item.window_title }}</div>
+                {% endif %}
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ (item.duration / total_time * 100) if total_time > 0 else 0 }}%"></div>
+                </div>
+            </div>
+            <div class="duration">{{ format_duration(item.duration) }}</div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+        <p>📭 No data available for this period</p>
+        <p style="font-size: 0.9em;">Start the tracker to begin collecting data</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateStats() {
+    const days = document.getElementById('days').value;
+    const group_by = document.getElementById('group_by').value;
+    window.location.href = `/stats?days=${days}&group_by=${group_by}`;
+}
+</script>
+{% endblock %}

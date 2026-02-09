@@ -1,3 +1,5 @@
+# File: database.py
+# Location: screentime/database.py
 """Database module for storing screen time data."""
 
 import sqlite3

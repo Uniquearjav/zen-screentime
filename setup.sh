@@ -1,13 +1,19 @@
 #!/bin/bash
-# Quick setup script for Screentime
+# File: setup.sh
+# Location: setup.sh
+# Quick setup script for Screentime GTK GUI
 
-echo "=== Screentime Setup ==="
-echo ""
+set -euo pipefail
 
-# Detect display server
+echo "=== Screentime GTK Setup ==="
+
+echo "Installing GTK dependencies..."
+sudo pacman -S --needed python-gobject gobject-introspection gtk4 libadwaita
+
+echo "Detecting display server..."
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     echo "✓ Detected Wayland session"
-    
+
     if command -v swaymsg &> /dev/null; then
         echo "✓ Sway detected"
     elif command -v hyprctl &> /dev/null; then
@@ -16,43 +22,26 @@ if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
         echo "⚠ Warning: No supported Wayland compositor detected"
         echo "  Please install Sway or Hyprland"
     fi
-elif [ -n "$DISPLAY" ]; then
+elif [ -n "${DISPLAY:-}" ]; then
     echo "✓ Detected X11 session"
-    
-    # Check for required tools
+
     if ! command -v xdotool &> /dev/null; then
-        echo "⚠ xdotool not found. Installing..."
+        echo "Installing xdotool..."
         sudo pacman -S --needed xdotool
     else
         echo "✓ xdotool installed"
     fi
-    
+
     if ! command -v xprop &> /dev/null; then
-        echo "⚠ xprop not found. Installing..."
+        echo "Installing xorg-xprop..."
         sudo pacman -S --needed xorg-xprop
     else
-        echo "✓ xprop installed"
+        echo "✓ xorg-xprop installed"
     fi
 else
     echo "⚠ Could not detect display server"
 fi
 
 echo ""
-echo "Installing Python dependencies..."
-sudo pacman -S --needed python-click
-
-echo ""
-echo "Making screentime.py executable..."
-chmod +x screentime.py
-
-echo ""
-echo "=== Setup Complete! ==="
-echo ""
-echo "Quick start:"
-echo "  ./screentime.py start --daemon   # Start tracking in background"
-echo "  ./screentime.py stats            # View today's stats"
-echo "  ./screentime.py --help           # See all commands"
-echo ""
-echo "Optional: Create system-wide command"
-echo "  sudo ln -s $(pwd)/screentime.py /usr/local/bin/screentime"
-echo ""
+echo "=== Setup Complete ==="
+echo "Run: python3 main.py"

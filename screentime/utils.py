@@ -1,3 +1,5 @@
+# File: utils.py
+# Location: screentime/utils.py
 """Utility functions for screentime app."""
 
 from typing import List, Dict

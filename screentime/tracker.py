@@ -1,3 +1,5 @@
+# File: tracker.py
+# Location: screentime/tracker.py
 """Screen time tracking module."""
 
 import os

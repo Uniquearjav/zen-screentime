@@ -109,5 +109,51 @@ def api_weekly():
     return jsonify(result)
 
 
+@app.route('/blocklist')
+def blocklist():
+    """Blocklist management page."""
+    blocked_apps = db.get_blocklist()
+    return render_template('blocklist.html', blocked_apps=blocked_apps)
+
+
+@app.route('/api/blocklist/add', methods=['POST'])
+def api_blocklist_add():
+    """API endpoint to add app to blocklist."""
+    data = request.get_json()
+    app_name = data.get('app_name', '').strip()
+    
+    if not app_name:
+        return jsonify({'success': False, 'message': 'App name is required'}), 400
+    
+    success = db.add_to_blocklist(app_name)
+    if success:
+        return jsonify({'success': True, 'message': f"Added '{app_name}' to blocklist"})
+    else:
+        return jsonify({'success': False, 'message': f"'{app_name}' is already in blocklist"}), 400
+
+
+@app.route('/api/blocklist/remove', methods=['POST'])
+def api_blocklist_remove():
+    """API endpoint to remove app from blocklist."""
+    data = request.get_json()
+    app_name = data.get('app_name', '').strip()
+    
+    if not app_name:
+        return jsonify({'success': False, 'message': 'App name is required'}), 400
+    
+    success = db.remove_from_blocklist(app_name)
+    if success:
+        return jsonify({'success': True, 'message': f"Removed '{app_name}' from blocklist"})
+    else:
+        return jsonify({'success': False, 'message': f"'{app_name}' is not in blocklist"}), 404
+
+
+@app.route('/api/blocklist')
+def api_blocklist():
+    """API endpoint to get blocklist."""
+    blocked_apps = db.get_blocklist()
+    return jsonify(blocked_apps)
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

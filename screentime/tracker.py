@@ -179,7 +179,8 @@ class ScreenTimeTracker:
                 # If same window as before, record the time spent
                 if self.last_window == window_info and self.last_check:
                     duration = int(current_time - self.last_check)
-                    if duration > 0:
+                    # Skip recording if app_name is Unknown or blocked
+                    if duration > 0 and app_name != 'Unknown' and not self.db.is_blocked(app_name):
                         self.db.record_activity(app_name, window_title, duration)
                 
                 self.last_window = window_info

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Blocklist - Screentime Tracker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>🚫 Blocklist Management</h2>
+    <p style="margin-bottom: 20px; color: #666;">
+        Apps in the blocklist will not be tracked. This is useful for excluding system apps or apps you don't want to monitor.
+    </p>
+    
+    <div style="margin-bottom: 30px;">
+        <h3 style="margin-bottom: 15px;">Add App to Blocklist</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input 
+                type="text" 
+                id="appNameInput" 
+                placeholder="Enter app name (e.g., kitty, firefox)"
+                style="flex: 1; min-width: 250px; padding: 10px 15px; border: 2px solid #e0e0e0; border-radius: 5px; font-size: 1em;"
+            >
+            <button 
+                onclick="addToBlocklist()" 
+                style="padding: 10px 25px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 500; font-size: 1em;"
+            >
+                Add to Blocklist
+            </button>
+        </div>
+        <div id="message" style="margin-top: 10px; padding: 10px; border-radius: 5px; display: none;"></div>
+    </div>
+    
+    {% if blocked_apps %}
+    <h3>🔒 Blocked Apps ({{ blocked_apps|length }})</h3>
+    <ul class="app-list" id="blocklist">
+        {% for item in blocked_apps %}
+        <li class="app-item" data-app="{{ item.app_name }}">
+            <div>
+                <div class="app-name">{{ item.app_name }}</div>
+                <div style="font-size: 0.85em; color: #888;">
+                    Added: {{ item.added_date[:10] }}
+                </div>
+            </div>
+            <button 
+                onclick="removeFromBlocklist('{{ item.app_name }}')" 
+                style="padding: 8px 15px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 500;"
+            >
+                Remove
+            </button>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state" id="emptyState">
+        <p>📭 No apps in blocklist</p>
+        <p style="font-size: 0.9em;">Add apps above to exclude them from tracking</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .app-list {
+        list-style: none;
+    }
+    
+    .app-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.2s;
+    }
+    
+    .app-item:hover {
+        background: #f9f9f9;
+    }
+    
+    .app-item:last-child {
+        border-bottom: none;
+    }
+    
+    .app-name {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 4px;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #888;
+    }
+    
+    .empty-state p:first-child {
+        font-size: 1.5em;
+        margin-bottom: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showMessage(text, isError = false) {
+    const messageDiv = document.getElementById('message');
+    messageDiv.textContent = text;
+    messageDiv.style.display = 'block';
+    messageDiv.style.background = isError ? '#ffe6e6' : '#e6ffe6';
+    messageDiv.style.color = isError ? '#d32f2f' : '#2e7d32';
+    messageDiv.style.border = isError ? '1px solid #ffcccc' : '1px solid #ccffcc';
+    
+    setTimeout(() => {
+        messageDiv.style.display = 'none';
+    }, 3000);
+}
+
+async function addToBlocklist() {
+    const input = document.getElementById('appNameInput');
+    const appName = input.value.trim();
+    
+    if (!appName) {
+        showMessage('Please enter an app name', true);
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/blocklist/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ app_name: appName })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showMessage(data.message, false);
+            input.value = '';
+            
+            // Reload the page to update the list
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            showMessage(data.message, true);
+        }
+    } catch (error) {
+        showMessage('Error adding app to blocklist', true);
+    }
+}
+
+async function removeFromBlocklist(appName) {
+    if (!confirm(`Remove '${appName}' from blocklist?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/blocklist/remove', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ app_name: appName })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showMessage(data.message, false);
+            
+            // Remove the item from the list
+            const item = document.querySelector(`[data-app="${appName}"]`);
+            if (item) {
+                item.remove();
+            }
+            
+            // Check if list is now empty
+            const blocklist = document.getElementById('blocklist');
+            if (blocklist && blocklist.children.length === 0) {
+                location.reload();
+            }
+        } else {
+            showMessage(data.message, true);
+        }
+    } catch (error) {
+        showMessage('Error removing app from blocklist', true);
+    }
+}
+
+// Allow pressing Enter to add app
+document.getElementById('appNameInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        addToBlocklist();
+    }
+});
+</script>
+{% endblock %}

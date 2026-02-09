@@ -13,24 +13,14 @@ A lightweight CLI application to track and analyze your screen time on Arch Linu
 - 📈 Visual statistics with progress bars
 - 📱 Responsive web design for mobile and desktop
 
+## Screenshots
+### Dashboard
+![Dashboard](screenshot/img.jpg)
+### Blocklist
+![Dashboard](screenshot/blocklist_img.png)
 ## Installation
 
 ### Prerequisites
-
-**For X11:**
-```bash
-sudo pacman -S xdotool xorg-xprop
-```
-
-**For Wayland (Sway):**
-```bash
-sudo pacman -S sway jq
-```
-
-**For Wayland (Hyprland):**
-```bash
-sudo pacman -S hyprland jq
-```
 
 ### Install Python dependencies
 
@@ -190,32 +180,6 @@ Enable and start:
 systemctl --user enable screentime.service
 systemctl --user start screentime.service
 ```
-
-## Examples
-
-```bash
-# Start tracking
-./screentime.py start --daemon
-
-# Check if running
-./screentime.py status
-
-# View today's stats
-./screentime.py stats
-
-# View last week
-./screentime.py stats --days 7
-
-# View daily breakdown with bars
-./screentime.py daily
-
-# View weekly summary
-./screentime.py week
-
-# Stop tracking
-./screentime.py stop
-```
-
 ## Troubleshooting
 
 ### "No active window detected"

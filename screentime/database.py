@@ -38,6 +38,15 @@ class Database:
             )
         ''')
         
+        # Blocklist table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS blocklist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_name TEXT UNIQUE NOT NULL,
+                added_date DATETIME NOT NULL
+            )
+        ''')
+        
         # Index for faster queries
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_date 
@@ -144,6 +153,50 @@ class Database:
         cursor = self.conn.cursor()
         cursor.execute('DELETE FROM activity')
         self.conn.commit()
+    
+    def remove_unknown(self):
+        """Delete all 'Unknown' app entries."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM activity WHERE app_name = 'Unknown'")
+        self.conn.commit()
+        return cursor.rowcount
+    
+    def add_to_blocklist(self, app_name: str) -> bool:
+        """Add an app to the blocklist."""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO blocklist (app_name, added_date)
+                VALUES (?, ?)
+            ''', (app_name, datetime.now()))
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False  # App already in blocklist
+    
+    def remove_from_blocklist(self, app_name: str) -> bool:
+        """Remove an app from the blocklist."""
+        cursor = self.conn.cursor()
+        cursor.execute('DELETE FROM blocklist WHERE app_name = ?', (app_name,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+    
+    def get_blocklist(self) -> List[Dict]:
+        """Get all blocked apps."""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT app_name, added_date
+            FROM blocklist
+            ORDER BY app_name
+        ''')
+        rows = cursor.fetchall()
+        return [{'app_name': row['app_name'], 'added_date': row['added_date']} for row in rows]
+    
+    def is_blocked(self, app_name: str) -> bool:
+        """Check if an app is blocked."""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT 1 FROM blocklist WHERE app_name = ?', (app_name,))
+        return cursor.fetchone() is not None
     
     def close(self):
         """Close database connection."""

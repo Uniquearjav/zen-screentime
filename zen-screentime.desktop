@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Zen Screentime
+GenericName=Screen Time Tracker
+Comment=Track and visualize your screen time on Arch Linux
+Exec=zen-screentime
+Icon=preferences-system-time
+Terminal=false
+Categories=Utility;System;Monitor;GTK;
+Keywords=screentime;tracker;monitor;time;usage;productivity;
+StartupNotify=true

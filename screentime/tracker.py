@@ -5,10 +5,10 @@
 import os
 import time
 import signal
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
-from datetime import datetime
 
 
 class ScreenTimeTracker:
@@ -19,8 +19,8 @@ class ScreenTimeTracker:
         self.db = database
         self.interval = interval
         self.pid_file = Path.home() / '.local' / 'share' / 'screentime' / 'tracker.pid'
-        self.last_window = None
-        self.last_check = None
+        self.last_window: Optional[Tuple[str, str]] = None
+        self.last_check: Optional[float] = None
     
     def _detect_session_type(self) -> str:
         """Detect if running X11 or Wayland."""
@@ -41,11 +41,7 @@ class ScreenTimeTracker:
     
     def _command_exists(self, command: str) -> bool:
         """Check if a command exists in PATH."""
-        return subprocess.run(
-            ['which', command],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        ).returncode == 0
+        return shutil.which(command) is not None
     
     def _get_active_window_x11(self) -> Optional[Tuple[str, str]]:
         """Get active window info using X11 tools."""
@@ -166,6 +162,34 @@ class ScreenTimeTracker:
             return self._get_active_window_wayland()
         else:
             return None
+
+    def process_window_info(
+        self,
+        window_info: Optional[Tuple[str, str]],
+        current_time: Optional[float] = None
+    ) -> Optional[Tuple[str, str]]:
+        """Process a sampled window and record usage when needed.
+
+        Returns the window tuple when it is allowed (not blocklisted), otherwise None.
+        """
+        if current_time is None:
+            current_time = time.time()
+
+        allowed_window = None
+        if window_info:
+            app_name, window_title = window_info
+            if self.db.is_blocked_app(app_name):
+                self.last_window = None
+            else:
+                if self.last_window == window_info and self.last_check:
+                    duration = int(current_time - self.last_check)
+                    if duration > 0:
+                        self.db.record_activity(app_name, window_title, duration)
+                self.last_window = window_info
+                allowed_window = window_info
+
+        self.last_check = current_time
+        return allowed_window
     
     def start(self):
         """Start tracking in foreground."""
@@ -174,24 +198,7 @@ class ScreenTimeTracker:
         while True:
             current_time = time.time()
             window_info = self.get_active_window()
-            
-            if window_info:
-                app_name, window_title = window_info
-                if self.db.is_blocked_app(app_name):
-                    self.last_window = None
-                    self.last_check = current_time
-                    time.sleep(self.interval)
-                    continue
-                
-                # If same window as before, record the time spent
-                if self.last_window == window_info and self.last_check:
-                    duration = int(current_time - self.last_check)
-                    if duration > 0:
-                        self.db.record_activity(app_name, window_title, duration)
-                
-                self.last_window = window_info
-            
-            self.last_check = current_time
+            self.process_window_info(window_info, current_time)
             time.sleep(self.interval)
     
     def start_daemon(self):

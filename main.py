@@ -31,34 +31,21 @@ class TrackerThread(threading.Thread):
         super().__init__(daemon=True)
         self.tracker = ScreenTimeTracker(db, interval)
         self.callback = callback
-        self.running = False
+        self.stop_event = threading.Event()
     
     def run(self):
-        self.running = True
-        last_window = None
-        last_check = None
-        
-        while self.running:
+        while not self.stop_event.is_set():
             current_time = time.time()
             window_info = self.tracker.get_active_window()
             
             if window_info:
                 app_name, window_title = window_info
                 GLib.idle_add(self.callback, app_name, window_title)
-                if self.tracker.db.is_blocked_app(app_name):
-                    last_window = None
-                else:
-                    if last_window == window_info and last_check:
-                        duration = int(current_time - last_check)
-                        if duration > 0:
-                            self.tracker.db.record_activity(app_name, window_title, duration)
-                    last_window = window_info
-            
-            last_check = current_time
-            time.sleep(self.tracker.interval)
+            self.tracker.process_window_info(window_info, current_time)
+            self.stop_event.wait(self.tracker.interval)
     
     def stop(self):
-        self.running = False
+        self.stop_event.set()
 
 
 class AppListRow(Gtk.ListBoxRow):
@@ -134,15 +121,17 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.db = db
         self.tracker_thread = None
         self.tracking = False
+        self.refresh_source_id = None
         
         self.set_title("Screentime Tracker")
         self.set_default_size(900, 650)
+        self.connect("close-request", self.on_close_request)
         
         self.setup_ui()
         self.load_data()
         
         # Auto-refresh timer
-        GLib.timeout_add_seconds(60, self.on_refresh_timer)
+        self.refresh_source_id = GLib.timeout_add_seconds(60, self.on_refresh_timer)
     
     def setup_ui(self):
         """Setup the user interface."""
@@ -375,6 +364,14 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         frame.set_child(card)
         
         return frame
+
+    def clear_listbox(self, listbox: Gtk.ListBox):
+        """Remove all rows from a listbox."""
+        while True:
+            row = listbox.get_row_at_index(0)
+            if row is None:
+                break
+            listbox.remove(row)
     
     def on_track_clicked(self, button):
         """Handle track button click."""
@@ -385,9 +382,10 @@ class ScreentimeWindow(Adw.ApplicationWindow):
     
     def start_tracking(self):
         """Start tracking."""
-        if self.tracker_thread is None:
-            self.tracker_thread = TrackerThread(self.db, self.update_status)
-        
+        if self.tracker_thread and self.tracker_thread.is_alive():
+            return
+
+        self.tracker_thread = TrackerThread(self.db, self.update_status)
         self.tracker_thread.start()
         self.tracking = True
         self.track_button.set_label("⏹ Stop Tracking")
@@ -397,6 +395,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         """Stop tracking."""
         if self.tracker_thread:
             self.tracker_thread.stop()
+            self.tracker_thread.join(timeout=2)
             self.tracker_thread = None
         
         self.tracking = False
@@ -429,11 +428,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.today_apps_label.set_label(str(len(today_data)))
         
         # Clear and populate list
-        while True:
-            row = self.today_list.get_row_at_index(0)
-            if row is None:
-                break
-            self.today_list.remove(row)
+        self.clear_listbox(self.today_list)
         
         for item in today_data[:10]:
             percentage = (item['duration'] / today_total * 100) if today_total > 0 else 0
@@ -454,11 +449,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.stats_total_label.set_label(format_duration(total_time))
         
         # Clear and populate list
-        while True:
-            row = self.stats_list.get_row_at_index(0)
-            if row is None:
-                break
-            self.stats_list.remove(row)
+        self.clear_listbox(self.stats_list)
         
         for item in data:
             percentage = (item['duration'] / total_time * 100) if total_time > 0 else 0
@@ -479,11 +470,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.daily_total_label.set_label(format_duration(total_time))
         
         # Clear and populate list
-        while True:
-            row = self.daily_list.get_row_at_index(0)
-            if row is None:
-                break
-            self.daily_list.remove(row)
+        self.clear_listbox(self.daily_list)
         
         for item in data:
             percentage = (item['duration'] / total_time * 100) if total_time > 0 else 0
@@ -492,11 +479,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
 
     def load_blocklist_data(self):
         """Load blocklisted applications."""
-        while True:
-            row = self.blocklist_list.get_row_at_index(0)
-            if row is None:
-                break
-            self.blocklist_list.remove(row)
+        self.clear_listbox(self.blocklist_list)
 
         blocked_apps = self.db.get_blocklist()
         for app_name in blocked_apps:
@@ -533,6 +516,16 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.load_data()
         return True
 
+    def on_close_request(self, *_):
+        """Cleanup background tasks when the window closes."""
+        if self.refresh_source_id is not None:
+            GLib.source_remove(self.refresh_source_id)
+            self.refresh_source_id = None
+
+        if self.tracking:
+            self.stop_tracking()
+        return False
+
 
 class ScreentimeApp(Adw.Application):
     """Main application class."""
@@ -547,6 +540,11 @@ class ScreentimeApp(Adw.Application):
         if not win:
             win = ScreentimeWindow(self, self.db)
         win.present()
+
+    def do_shutdown(self):
+        """Shutdown the application and close resources."""
+        self.db.close()
+        super().do_shutdown()
 
 
 def main():

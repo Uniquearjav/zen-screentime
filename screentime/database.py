@@ -3,6 +3,7 @@
 """Database module for storing screen time data."""
 
 import sqlite3
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
@@ -22,62 +23,62 @@ class Database:
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self._create_tables()
     
     def _create_tables(self):
         """Create necessary database tables if they don't exist."""
-        cursor = self.conn.cursor()
-        
-        # Main activity tracking table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS activity (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME NOT NULL,
-                app_name TEXT NOT NULL,
-                window_title TEXT,
-                duration INTEGER NOT NULL,
-                date DATE NOT NULL
-            )
-        ''')
-        
-        # Index for faster queries
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_date 
-            ON activity(date)
-        ''')
-        
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_app_name 
-            ON activity(app_name)
-        ''')
+        with self._lock:
+            cursor = self.conn.cursor()
+            
+            # Main activity tracking table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS activity (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME NOT NULL,
+                    app_name TEXT NOT NULL,
+                    window_title TEXT,
+                    duration INTEGER NOT NULL,
+                    date DATE NOT NULL
+                )
+            ''')
+            
+            # Index for faster queries
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_date 
+                ON activity(date)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_app_name 
+                ON activity(app_name)
+            ''')
 
-        # User-managed blocklist table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS blocklist (
-                app_name TEXT PRIMARY KEY,
-                created_at DATETIME NOT NULL
-            )
-        ''')
-        
-        self.conn.commit()
+            # User-managed blocklist table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS blocklist (
+                    app_name TEXT PRIMARY KEY,
+                    created_at DATETIME NOT NULL
+                )
+            ''')
+            
+            self.conn.commit()
     
     def record_activity(self, app_name: str, window_title: str, duration: int):
         """Record a window activity entry."""
-        cursor = self.conn.cursor()
         timestamp = datetime.now()
         date = timestamp.date()
-        
-        cursor.execute('''
-            INSERT INTO activity (timestamp, app_name, window_title, duration, date)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (timestamp, app_name, window_title, duration, date))
-        
-        self.conn.commit()
+
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO activity (timestamp, app_name, window_title, duration, date)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (timestamp, app_name, window_title, duration, date))
+            self.conn.commit()
     
     def get_stats(self, start_date: datetime, group_by: str = 'app') -> List[Dict]:
         """Get aggregated statistics since start_date."""
-        cursor = self.conn.cursor()
-        
         if group_by == 'app':
             query = '''
                 SELECT app_name, SUM(duration) as duration
@@ -94,9 +95,11 @@ class Database:
                 GROUP BY app_name, window_title
                 ORDER BY duration DESC
             '''
-        
-        cursor.execute(query, (start_date,))
-        rows = cursor.fetchall()
+
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(query, (start_date,))
+            rows = cursor.fetchall()
         
         result = []
         for row in rows:
@@ -112,34 +115,34 @@ class Database:
     
     def get_daily_breakdown(self, target_date: datetime) -> List[Dict]:
         """Get breakdown for a specific day."""
-        cursor = self.conn.cursor()
         date = target_date.date()
-        
-        cursor.execute('''
-            SELECT app_name, SUM(duration) as duration
-            FROM activity
-            WHERE date = ?
-            GROUP BY app_name
-            ORDER BY duration DESC
-        ''', (date,))
-        
-        rows = cursor.fetchall()
+
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT app_name, SUM(duration) as duration
+                FROM activity
+                WHERE date = ?
+                GROUP BY app_name
+                ORDER BY duration DESC
+            ''', (date,))
+            rows = cursor.fetchall()
         return [{'app_name': row['app_name'], 'duration': row['duration']} for row in rows]
     
     def get_weekly_summary(self) -> List[Dict]:
         """Get daily totals for the past 7 days."""
-        cursor = self.conn.cursor()
         start_date = (datetime.now() - timedelta(days=7)).date()
-        
-        cursor.execute('''
-            SELECT date, SUM(duration) as total_duration
-            FROM activity
-            WHERE date >= ?
-            GROUP BY date
-            ORDER BY date DESC
-        ''', (start_date,))
-        
-        rows = cursor.fetchall()
+
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT date, SUM(duration) as total_duration
+                FROM activity
+                WHERE date >= ?
+                GROUP BY date
+                ORDER BY date DESC
+            ''', (start_date,))
+            rows = cursor.fetchall()
         result = []
         for row in rows:
             result.append({
@@ -151,13 +154,14 @@ class Database:
 
     def get_blocklist(self) -> List[str]:
         """Get all blocked application names."""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT app_name
-            FROM blocklist
-            ORDER BY app_name COLLATE NOCASE ASC
-        ''')
-        rows = cursor.fetchall()
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT app_name
+                FROM blocklist
+                ORDER BY app_name COLLATE NOCASE ASC
+            ''')
+            rows = cursor.fetchall()
         return [row['app_name'] for row in rows]
 
     def add_blocked_app(self, app_name: str) -> bool:
@@ -166,21 +170,22 @@ class Database:
         if not normalized:
             return False
 
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT 1
-            FROM blocklist
-            WHERE LOWER(app_name) = LOWER(?)
-        ''', (normalized,))
-        if cursor.fetchone():
-            return False
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT 1
+                FROM blocklist
+                WHERE LOWER(app_name) = LOWER(?)
+            ''', (normalized,))
+            if cursor.fetchone():
+                return False
 
-        cursor.execute('''
-            INSERT INTO blocklist (app_name, created_at)
-            VALUES (?, ?)
-        ''', (normalized, datetime.now()))
-        self.conn.commit()
-        return True
+            cursor.execute('''
+                INSERT INTO blocklist (app_name, created_at)
+                VALUES (?, ?)
+            ''', (normalized, datetime.now()))
+            self.conn.commit()
+            return True
 
     def remove_blocked_app(self, app_name: str) -> bool:
         """Remove an application name from the blocklist."""
@@ -188,13 +193,14 @@ class Database:
         if not normalized:
             return False
 
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            DELETE FROM blocklist
-            WHERE LOWER(app_name) = LOWER(?)
-        ''', (normalized,))
-        self.conn.commit()
-        return cursor.rowcount > 0
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                DELETE FROM blocklist
+                WHERE LOWER(app_name) = LOWER(?)
+            ''', (normalized,))
+            self.conn.commit()
+            return cursor.rowcount > 0
 
     def is_blocked_app(self, app_name: str) -> bool:
         """Check if an application is blocklisted."""
@@ -202,21 +208,24 @@ class Database:
         if not normalized:
             return False
 
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT 1
-            FROM blocklist
-            WHERE LOWER(app_name) = LOWER(?)
-            LIMIT 1
-        ''', (normalized,))
-        return cursor.fetchone() is not None
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT 1
+                FROM blocklist
+                WHERE LOWER(app_name) = LOWER(?)
+                LIMIT 1
+            ''', (normalized,))
+            return cursor.fetchone() is not None
     
     def reset(self):
         """Delete all recorded data."""
-        cursor = self.conn.cursor()
-        cursor.execute('DELETE FROM activity')
-        self.conn.commit()
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM activity')
+            self.conn.commit()
     
     def close(self):
         """Close database connection."""
-        self.conn.close()
+        with self._lock:
+            self.conn.close()

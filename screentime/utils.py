@@ -7,6 +7,7 @@ from typing import List, Dict
 
 def format_duration(seconds: int) -> str:
     """Format duration in seconds to human-readable string."""
+    seconds = max(0, int(seconds))
     if seconds < 60:
         return f"{seconds}s"
     
@@ -31,7 +32,7 @@ def format_stats(data: List[Dict], group_by: str = 'app') -> str:
         return "No data available."
     
     lines = []
-    total_duration = sum(item['duration'] for item in data)
+    total_duration = sum(item.get('duration', 0) for item in data)
     
     # Header
     if group_by == 'app':
@@ -43,16 +44,17 @@ def format_stats(data: List[Dict], group_by: str = 'app') -> str:
     
     # Data rows (limit to top 20)
     for item in data[:20]:
-        duration_str = format_duration(item['duration'])
-        percentage = (item['duration'] / total_duration * 100) if total_duration > 0 else 0
+        duration = item.get('duration', 0)
+        duration_str = format_duration(duration)
+        percentage = (duration / total_duration * 100) if total_duration > 0 else 0
         percentage_str = f"{percentage:.1f}%"
         
         if group_by == 'app':
-            app_name = item['app_name'][:29]  # Truncate if too long
+            app_name = str(item.get('app_name', 'Unknown'))[:29]  # Truncate if too long
             lines.append(f"{app_name:<30} {duration_str:>15} {percentage_str:>12}")
         else:
-            app_name = item['app_name'][:19]
-            window_title = item.get('window_title', 'Unknown')[:29]
+            app_name = str(item.get('app_name', 'Unknown'))[:19]
+            window_title = str(item.get('window_title', 'Unknown'))[:29]
             lines.append(f"{app_name:<20} {window_title:<30} {duration_str:>15} {percentage_str:>12}")
     
     if len(data) > 20:

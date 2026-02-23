@@ -11,6 +11,7 @@ A lightweight GTK4 GUI to track and visualize your screen time on Arch Linux. Su
 - 🎯 Support for both X11 and Wayland
 - 💾 Local SQLite database storage
 - 🔄 Background tracking while the GUI is open
+- 🚫 Blocklist tab to exclude selected apps from tracking
 
 ## Installation
 

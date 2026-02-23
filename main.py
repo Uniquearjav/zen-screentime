@@ -45,13 +45,14 @@ class TrackerThread(threading.Thread):
             if window_info:
                 app_name, window_title = window_info
                 GLib.idle_add(self.callback, app_name, window_title)
-                
-                if last_window == window_info and last_check:
-                    duration = int(current_time - last_check)
-                    if duration > 0:
-                        self.tracker.db.record_activity(app_name, window_title, duration)
-                
-                last_window = window_info
+                if self.tracker.db.is_blocked_app(app_name):
+                    last_window = None
+                else:
+                    if last_window == window_info and last_check:
+                        duration = int(current_time - last_check)
+                        if duration > 0:
+                            self.tracker.db.record_activity(app_name, window_title, duration)
+                    last_window = window_info
             
             last_check = current_time
             time.sleep(self.tracker.interval)
@@ -96,6 +97,32 @@ class AppListRow(Gtk.ListBoxRow):
         box.append(top_box)
         box.append(progress)
         
+        self.set_child(box)
+
+
+class BlocklistRow(Gtk.ListBoxRow):
+    """Custom row for blocklisted applications."""
+
+    def __init__(self, app_name, remove_callback):
+        super().__init__()
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+
+        app_label = Gtk.Label(label=app_name)
+        app_label.set_halign(Gtk.Align.START)
+        app_label.set_hexpand(True)
+
+        remove_button = Gtk.Button.new_from_icon_name("list-remove-symbolic")
+        remove_button.add_css_class("flat")
+        remove_button.set_tooltip_text("Remove from blocklist")
+        remove_button.connect("clicked", lambda *_: remove_callback(app_name))
+
+        box.append(app_label)
+        box.append(remove_button)
         self.set_child(box)
 
 
@@ -148,6 +175,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.create_dashboard_tab()
         self.create_stats_tab()
         self.create_daily_tab()
+        self.create_blocklist_tab()
         
         self.set_content(main_box)
     
@@ -281,6 +309,53 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         page = self.tab_view.append(scroll)
         page.set_title("Daily View")
         page.set_icon(Gio.ThemedIcon.new("view-calendar-symbolic"))
+
+    def create_blocklist_tab(self):
+        """Create blocklist tab."""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        box.set_margin_start(20)
+        box.set_margin_end(20)
+        box.set_margin_top(20)
+        box.set_margin_bottom(20)
+
+        input_box = Gtk.Box(spacing=10)
+        input_box.append(Gtk.Label(label="Block application:"))
+
+        self.blocklist_entry = Gtk.Entry()
+        self.blocklist_entry.set_hexpand(True)
+        self.blocklist_entry.set_placeholder_text("e.g. firefox, code, Discord")
+        self.blocklist_entry.connect('activate', self.on_blocklist_add_clicked)
+        input_box.append(self.blocklist_entry)
+
+        add_button = Gtk.Button(label="Add")
+        add_button.add_css_class('suggested-action')
+        add_button.connect('clicked', self.on_blocklist_add_clicked)
+        input_box.append(add_button)
+
+        self.blocklist_status_label = Gtk.Label(label="Blocked apps are ignored by tracking.")
+        self.blocklist_status_label.set_halign(Gtk.Align.START)
+        self.blocklist_status_label.add_css_class('dim-label')
+
+        self.blocklist_empty_label = Gtk.Label(label="No blocked apps yet.")
+        self.blocklist_empty_label.set_halign(Gtk.Align.START)
+        self.blocklist_empty_label.add_css_class('dim-label')
+
+        self.blocklist_list = Gtk.ListBox()
+        self.blocklist_list.add_css_class('boxed-list')
+
+        box.append(input_box)
+        box.append(self.blocklist_status_label)
+        box.append(self.blocklist_empty_label)
+        box.append(self.blocklist_list)
+
+        scroll.set_child(box)
+
+        page = self.tab_view.append(scroll)
+        page.set_title("Blocklist")
+        page.set_icon(Gio.ThemedIcon.new("process-stop-symbolic"))
     
     def create_stat_card(self, title, value_widget):
         """Create a statistic card."""
@@ -331,7 +406,10 @@ class ScreentimeWindow(Adw.ApplicationWindow):
     def update_status(self, app_name, window_title):
         """Update status label."""
         short_title = window_title[:40] + "..." if len(window_title) > 40 else window_title
-        self.status_label.set_label(f"🟢 {app_name} - {short_title}")
+        if self.db.is_blocked_app(app_name):
+            self.status_label.set_label(f"🚫 {app_name} - {short_title}")
+        else:
+            self.status_label.set_label(f"🟢 {app_name} - {short_title}")
         return False
     
     def load_data(self):
@@ -339,6 +417,7 @@ class ScreentimeWindow(Adw.ApplicationWindow):
         self.load_dashboard_data()
         self.load_stats_data()
         self.load_daily_data()
+        self.load_blocklist_data()
     
     def load_dashboard_data(self):
         """Load dashboard data."""
@@ -410,6 +489,44 @@ class ScreentimeWindow(Adw.ApplicationWindow):
             percentage = (item['duration'] / total_time * 100) if total_time > 0 else 0
             row = AppListRow(item['app_name'], item['duration'], percentage)
             self.daily_list.append(row)
+
+    def load_blocklist_data(self):
+        """Load blocklisted applications."""
+        while True:
+            row = self.blocklist_list.get_row_at_index(0)
+            if row is None:
+                break
+            self.blocklist_list.remove(row)
+
+        blocked_apps = self.db.get_blocklist()
+        for app_name in blocked_apps:
+            self.blocklist_list.append(BlocklistRow(app_name, self.on_blocklist_remove_clicked))
+
+        self.blocklist_empty_label.set_visible(len(blocked_apps) == 0)
+
+    def on_blocklist_add_clicked(self, *_):
+        """Add a new application to the blocklist."""
+        app_name = self.blocklist_entry.get_text().strip()
+        if not app_name:
+            self.blocklist_status_label.set_label("Enter an application name to block.")
+            return
+
+        if self.db.add_blocked_app(app_name):
+            self.blocklist_entry.set_text("")
+            self.blocklist_status_label.set_label(f"Added to blocklist: {app_name}")
+            self.load_blocklist_data()
+            return
+
+        self.blocklist_status_label.set_label(f"Already blocklisted (or invalid): {app_name}")
+
+    def on_blocklist_remove_clicked(self, app_name):
+        """Remove an application from the blocklist."""
+        if self.db.remove_blocked_app(app_name):
+            self.blocklist_status_label.set_label(f"Removed from blocklist: {app_name}")
+            self.load_blocklist_data()
+            return
+
+        self.blocklist_status_label.set_label(f"Not found in blocklist: {app_name}")
     
     def on_refresh_timer(self):
         """Auto-refresh callback."""

@@ -50,6 +50,14 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_app_name 
             ON activity(app_name)
         ''')
+
+        # User-managed blocklist table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS blocklist (
+                app_name TEXT PRIMARY KEY,
+                created_at DATETIME NOT NULL
+            )
+        ''')
         
         self.conn.commit()
     
@@ -140,6 +148,68 @@ class Database:
             })
         
         return result
+
+    def get_blocklist(self) -> List[str]:
+        """Get all blocked application names."""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT app_name
+            FROM blocklist
+            ORDER BY app_name COLLATE NOCASE ASC
+        ''')
+        rows = cursor.fetchall()
+        return [row['app_name'] for row in rows]
+
+    def add_blocked_app(self, app_name: str) -> bool:
+        """Add an application name to the blocklist."""
+        normalized = app_name.strip()
+        if not normalized:
+            return False
+
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT 1
+            FROM blocklist
+            WHERE LOWER(app_name) = LOWER(?)
+        ''', (normalized,))
+        if cursor.fetchone():
+            return False
+
+        cursor.execute('''
+            INSERT INTO blocklist (app_name, created_at)
+            VALUES (?, ?)
+        ''', (normalized, datetime.now()))
+        self.conn.commit()
+        return True
+
+    def remove_blocked_app(self, app_name: str) -> bool:
+        """Remove an application name from the blocklist."""
+        normalized = app_name.strip()
+        if not normalized:
+            return False
+
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            DELETE FROM blocklist
+            WHERE LOWER(app_name) = LOWER(?)
+        ''', (normalized,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def is_blocked_app(self, app_name: str) -> bool:
+        """Check if an application is blocklisted."""
+        normalized = app_name.strip()
+        if not normalized:
+            return False
+
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT 1
+            FROM blocklist
+            WHERE LOWER(app_name) = LOWER(?)
+            LIMIT 1
+        ''', (normalized,))
+        return cursor.fetchone() is not None
     
     def reset(self):
         """Delete all recorded data."""
